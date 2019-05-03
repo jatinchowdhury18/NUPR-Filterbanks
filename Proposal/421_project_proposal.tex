@@ -1,0 +1,252 @@
+% !TeX program = pdflatex
+% !BIB program = bibtex
+
+\documentclass{article}
+\usepackage[margin=1in]{geometry}
+
+\usepackage{tikz}
+\usetikzlibrary{dsp,chains}
+
+\usepackage{cleveref}
+
+\title{Non-Uniform Filterbanks for Digital Audio Effects}
+\author{Jatin Chowdhury}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Abstract}
+This project will explore the possibilities of building
+audio effects based on non-uniform filter banks. The end goal is to
+produce four effects in the form of audio plugins:
+\begin{enumerate}
+    \item Multiband dynamics meter: A metering plugin that splits the
+    spectrum into 10 critical frequency bands. The plugin will show the
+    peak and RMS gain of each band in real time. This sort of plugin will
+    be useful for mixing and mastering engineers in analyzing the dynamic
+    range of a song in individual frequency bands.
+
+    \item Mastering Graphic EQ: In mastering, it is often desireable
+    to use linear phase filters for equalization with reduced phase
+    distortion. Most graphic equalizers, on the other hand, introduce
+    some amount of phase distortion, since they do not use perfect
+    reconstruction (PR) filterbanks. The idea here is to create a
+    ``mastering quality'' graphic EQ, through the implementation of a
+    PR non-uniform filterbank. Note that unlike the metering plugin,
+    this effect will require both analysis and synthesis filterbanks.
+
+    \item Frequency ``Sound-A-Like'' effect: In mixing, it can sometimes be
+    be useful to make two instruments sound nearly identical. To that end,
+    this plugin will accept a ``sidechain'' input, and will filter the main
+    input so that the frequency spectra of the two channels are identical.
+    Note that this will require an analysis and synthesis filterbank for the
+    main input, as well as an additional analysis filterbank for the sidechain
+    input.
+
+    \item Frequency ``Separator'' effect: A more common case in mixing is
+    that the engineer has two tracks with similar frequency spectra, and
+    wishes to ``separate'' the two tracks spectrally, so that the listener
+    can distinguish more easily between the two. This plugin will function
+    as an inverse to the ``Sound-A-Like'' plugin.
+\end{enumerate}
+
+A brief discussion of non-uniform filterbanking techniques is given below,
+followed by signal flow diagrams for each individual plugin.
+
+\section{Non-Uniform Fliterbank Techniques}
+\begin{itemize}
+    \item Polyphase filterbank \cite{SASPWEB2011}:
+    For this method, a filterbank would be designed as a set of minimum-phase
+    bandpass filters $H_k(z)$, as well as the set of inverse filters $F_k(z)$.
+    Each analysis filter can then be deconstructed using a ``type 1'' polyphase
+    representation:
+
+    \begin{equation}
+        H_k(z) = \sum_{l = 0}^{N-1} z^{-l} E_{kl}(z^N)
+    \end{equation}
+
+    And each synthesis filter can be deconstructed as ``type 2'' polyphase:
+
+    \begin{equation}
+        F_k(z) = \sum_{l = 0}^{N-1} z^{-N-l-1} R_{lk}(z^N)
+    \end{equation}
+
+    Using polyphase matrices $E(z)$ and $R(z)$, we can achieve perfect, in-phase
+    reconstruction with reasonable efficiency. Note that it is necessary for
+    the set of analysis filters to be minimum-phase to ensure
+    that the inverse filters are causal and stable.
+    
+    In some implementations, such as \cite{GraphicEQ}, the polyphase method
+    is used to create a uniform PR filterbank, then the channels are aggregated
+    so as to generate a non-uniform filterbank. However, it should be possible
+    to achieve greater efficiency by beginning with non-uniform filters.
+
+    \item Constant-Q transform:
+    Alternatively, a constant Q transform could be used to generate the filterbank.
+
+    \begin{equation}
+        X(k) = \frac{1}{N(k)} \sum_{n=0}^{N(k)-1} W(k,n) x(n) e^{\frac{-j2 \pi Qn}{N(k)}}
+    \end{equation}
+
+    where $W(k,n)$ is a windowing function, and
+    \begin{equation}
+        N(k) = Q \frac{f_s}{f_k}
+    \end{equation}
+
+    \cite{CQT_framework} gives a framework for invertible,
+    real-time Constant-Q Transforms (CQTs), using non-stationary
+    Gabor frames. \cite{Pitsh_Shift_CQT} discusses a specific real-time
+    implementation of a 48 point invertible CQT, in the context of
+    a pitch-shifting effect.
+\end{itemize}
+
+\section{Multiband Dynamics Meter}
+A signal flow diagram for the Multiband Dynamics Meter can be seen in \cref{meter}.
+Note that since this effect is a meter, no signal reconsntruction is required.
+The visualizer will display both peak and RMS gains
+for each channel.
+
+\begin{figure*}[ht]
+    \center
+    \begin{tikzpicture}[
+        node distance = 16mm and 10mm
+                                ]
+        \node (fb) [draw,minimum height=36mm] {Filter Bank};
+        \coordinate[left = of fb.west] (x);
+        \draw[dspconn] (x) node[left] {$x[n]$} -- (x-| fb.west);
+
+        \coordinate[above right = 16mm and 10mm of fb.east] (t0);
+        \coordinate [below = 7mm of t0] (t01);
+        \coordinate[below = of t0] (t1);
+        \coordinate [below = 7mm of t1] (t11);
+        \coordinate[below = of t1] (t2);
+        \coordinate [below = 7mm of t2] (t21);
+        \draw[dspline] (fb.east |- t0) -- (t0);
+        \draw[dspline] (t0) -- (t01);
+        \draw[dspline] (fb.east |- t1) -- (t1);
+        \draw[dspline] (t1) -- (t11);
+        \draw[dspline] (fb.east |- t2) -- (t2);
+        \draw[dspline] (t2) -- (t21);
+
+        \node (p0) [draw, right = of t0] {Peak};
+        \node (r0) [draw, below = 2mm of p0] {RMS};
+        \node (p1) [draw, right = of t1] {Peak};
+        \node (r1) [draw, below = 2mm of p1] {RMS};
+        \node (p2) [draw, right = of t2] {Peak};
+        \node (r2) [draw, below = 2mm of p2] {RMS};
+        \draw[dspconn] (t0) -- (p0);
+        \draw[dspconn] (t01) -- (r0);
+        \draw[dspconn] (t1) -- (p1);
+        \draw[dspconn] (t11) -- (r1);
+        \draw[dspconn] (t2) -- (p2);
+        \draw[dspconn] (t21) -- (r2);
+
+        \node (vis) [draw,minimum height=48mm, above right= -30mm and 10mm of p1] {Visualizer};
+        \draw[dspconn] (p0) -- (p0 -| vis.west);
+        \draw[dspconn] (r0) -- (r0 -| vis.west);
+        \draw[dspconn] (p1) -- (p1 -| vis.west);
+        \draw[dspconn] (r1) -- (r1 -| vis.west);
+        \draw[dspconn] (p2) -- (p2 -| vis.west);
+        \draw[dspconn] (r2) -- (r2 -| vis.west);
+    \end{tikzpicture}
+    \caption{\label{meter}{\it Multiband Dynamics Meter signal flow, shown
+                                   here with 3 channels.}}
+\end{figure*}
+
+\begin{figure*}[ht]
+    \center
+    \begin{tikzpicture}[
+        node distance = 8mm and 10mm
+                                ]
+        \node (fb) [draw,minimum height=36mm] {Filter Bank};
+        \coordinate[left = of fb.west] (x);
+        \draw[dspconn] (x) node[left] {$x[n]$} -- (x-| fb.west);
+
+        \node (a0) [draw, above right = 12mm and 10mm of fb.east] {Gain};
+        \node (a1) [draw, below = of a0] {Gain};
+        \node (a2) [draw, below = of a1] {Gain};
+        \draw[dspconn] (fb.east |- a0) -- (a0);
+        \draw[dspconn] (fb.east |- a1) -- (a1);
+        \draw[dspconn] (fb.east |- a2) -- (a2);
+
+        \node (rec) [draw,minimum height=36mm, above right= -22mm and 10mm of a1] {Reconstruct};
+        \draw[dspconn] (a0) -- (a0 -| rec.west);
+        \draw[dspconn] (a1) -- (a1 -| rec.west);
+        \draw[dspconn] (a2) -- (a2 -| rec.west);
+
+        \coordinate[above right = 3mm and 3mm of vis.east] (y);
+        \draw[dspconn] (y -| rec.east) -- (y) node[right] {$y[n]$};
+    \end{tikzpicture}
+    \caption{\label{graphic}{\it Signal flow for Graphic EQ.}}
+\end{figure*}
+
+\section{Mastering Graphic EQ}
+Signal flow for the Mastering Graphic EQ can be seen in
+\cref{graphic}. Since the gain operators will only affect
+the amplitude of each channel, if the filter
+bank has perfect reconstruction, the output should not
+introduce any phase distortion.
+
+\section{Frequency ``Sound-A-Like'' and Separator}
+The ``Sound-A-Like'' and Separator plugins will function similarly, with a detector
+filter bank on the sidechain input (\cref{sidechain}), and an automatic gain control
+filterbank, followed by a reconstruction filterbank on the main input (\cref{main}).
+The detector output for each channel of the sidechain filterbank will
+provide ``key'' the input for the automatic gain control on the corresponding
+channel of the main filterbank. The only difference between the two plugins
+will be the gain computers implemented in each plugin's automatic gain control
+processors.
+
+\begin{figure*}[ht]
+    \center
+    \begin{tikzpicture}[
+        node distance = 8mm and 10mm
+                                ]
+        \node (fb) [draw,minimum height=36mm] {Filter Bank};
+        \coordinate[left = of fb.west] (x);
+        \draw[dspconn] (x) node[left] {$s[n]$} -- (x-| fb.west);
+
+        \node (r0) [draw, above right = 12mm and 10mm of fb.east] {RMS};
+        \node (r1) [draw, below = of r0] {RMS};
+        \node (r2) [draw, below = of r1] {RMS};
+        \draw[dspconn] (fb.east |- r0) -- (r0);
+        \draw[dspconn] (fb.east |- r1) -- (r1);
+        \draw[dspconn] (fb.east |- r2) -- (r2);
+    \end{tikzpicture}
+    \caption{\label{sidechain}{\it Signal flow for sidechain input.}}
+\end{figure*}
+
+\begin{figure*}[ht]
+    \center
+    \begin{tikzpicture}[
+        node distance = 8mm and 10mm
+                                ]
+        \node (fb) [draw,minimum height=36mm] {Filter Bank};
+        \coordinate[left = of fb.west] (x);
+        \draw[dspconn] (x) node[left] {$x[n]$} -- (x-| fb.west);
+
+        \node (a0) [draw, above right = 12mm and 10mm of fb.east] {AGC};
+        \node (a1) [draw, below = of a0] {AGC};
+        \node (a2) [draw, below = of a1] {AGC};
+        \draw[dspconn] (fb.east |- a0) -- (a0);
+        \draw[dspconn] (fb.east |- a1) -- (a1);
+        \draw[dspconn] (fb.east |- a2) -- (a2);
+
+        \node (rec) [draw,minimum height=36mm, above right= -22mm and 10mm of a1] {Reconstruct};
+        \draw[dspconn] (a0) -- (a0 -| rec.west);
+        \draw[dspconn] (a1) -- (a1 -| rec.west);
+        \draw[dspconn] (a2) -- (a2 -| rec.west);
+
+        \coordinate[above right = 3mm and 3mm of vis.east] (y);
+        \draw[dspconn] (y -| rec.east) -- (y) node[right] {$y[n]$};
+    \end{tikzpicture}
+    \caption{\label{main}{\it Signal flow for main input.}}
+\end{figure*}
+
+%\newpage
+\nocite{*}
+\bibliographystyle{IEEEbib}
+\bibliography{references}
+
+\end{document}
