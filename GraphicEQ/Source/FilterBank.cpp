@@ -29,16 +29,70 @@ void Filterbank::reset()
         newNegCell.resize ((int) pow (2, i));
         negCells.add (newNegCell);
     }
+
+    buffers[0].setSize (1, fftSize);
+    buffers[1].setSize (1, fftSize);
+
+    buffers[0].clear();
+    buffers[1].clear();
 }
 
 void Filterbank::process (float* buffer, int numSamples)
+{
+    // write to buffers
+    if (writePtr + numSamples < fftSize)
+    {
+        buffers[writeBuffer].copyFrom (0, writePtr, buffer, numSamples);
+        writePtr += numSamples;
+    }
+    else
+    {
+        auto samplesBeforeEnd = fftSize - writePtr;
+        buffers[writeBuffer].copyFrom (0, writePtr, buffer, samplesBeforeEnd);
+
+        doFFTProcessing (buffers[writeBuffer].getWritePointer (0), buffers[writeBuffer].getNumSamples());
+
+        writeBuffer = ! writeBuffer;
+
+        buffers[writeBuffer].copyFrom (0, 0, AudioBuffer<float> (&buffer, 1, numSamples), 0, samplesBeforeEnd, numSamples-samplesBeforeEnd);
+        writePtr = numSamples-samplesBeforeEnd;
+    }
+
+    // read from buffers
+    if (readPtr + numSamples < fftSize)
+    {
+        auto* bufferPtr = buffers[readBuffer].getReadPointer (0);
+        for (int n = 0; n < numSamples; n++)
+            buffer[n] = bufferPtr[readPtr+n];
+
+        readPtr = readPtr + numSamples;
+    }
+    else
+    {
+        auto samplesBeforeEnd = fftSize - readPtr;
+
+        auto* bufferPtr = buffers[readBuffer].getReadPointer (0);
+        for (int n = 0; n < samplesBeforeEnd; n++)
+            buffer[n] = bufferPtr[readPtr+n];
+
+        readBuffer = ! readBuffer;
+
+        bufferPtr = buffers[readBuffer].getReadPointer (0);
+        for (int n = samplesBeforeEnd; n < numSamples; n++)
+            buffer[n] = bufferPtr[n-samplesBeforeEnd];
+
+        readPtr = numSamples-samplesBeforeEnd;
+    }
+}
+
+void Filterbank::doFFTProcessing (float* buffer, int numSamples)
 {
     for (int n = numSamples; n < fftSize; n++)
         fftInput[n] = fftInput[n-numSamples];
 
     for (int n = 0; n < numSamples; n++)
         fftInput[n] = buffer[n];
-    
+
     fft.perform (fftInput, fftOutput, false);
 
     for (int k = 0; k < fftSize/2; k++)
@@ -50,7 +104,7 @@ void Filterbank::process (float* buffer, int numSamples)
     // pack dyadic cells with FFT Data
     dcells (positiveFreq, posCells);
     dcells (negativeFreq, negCells);
-    
+
     //multiply filter bands by gains
     multGains (posCells);
     multGains (negCells);

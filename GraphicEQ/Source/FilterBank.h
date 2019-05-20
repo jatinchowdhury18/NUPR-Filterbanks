@@ -29,9 +29,16 @@ public:
     void setGain (float gainDB, int band);
 
 private:
+    void doFFTProcessing (float* buffer, int numSamples);
     void dcells (Complex<float>* fftData, Array<Array<Complex<float>>>& cells);
     void dcells2spec (Complex<float>* fftData, Array<Array<Complex<float>>>& cells);
     void multGains (Array<Array<Complex<float>>>& cells);
+
+    AudioBuffer<float> buffers[2];
+    int readBuffer = 1;
+    int readPtr = 0;
+    int writeBuffer = 0;
+    int writePtr = 0;
 
     Complex<float> fftInput[fftSize];
     Complex<float> fftOutput[fftSize];
