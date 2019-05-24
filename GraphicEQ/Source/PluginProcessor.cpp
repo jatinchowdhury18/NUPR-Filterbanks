@@ -21,6 +21,8 @@ GraphicEqAudioProcessor::GraphicEqAudioProcessor()
 
         filterbanks[0].setGain (*gainDB[i], i+1);
     }
+
+    setLatencySamples (2048);
 }
 
 GraphicEqAudioProcessor::~GraphicEqAudioProcessor()

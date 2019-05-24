@@ -12,6 +12,7 @@ namespace FilterbankConstants
         order = 12,
     };
     constexpr int fftSize = 4096; //pow (2, (int) order);
+    constexpr int windowSize = fftSize / 2;
 }
 
 using namespace FilterbankConstants;

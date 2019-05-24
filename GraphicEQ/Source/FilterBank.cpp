@@ -40,46 +40,61 @@ void Filterbank::reset()
 void Filterbank::process (float* buffer, int numSamples)
 {
     // write to buffers
-    if (writePtr + numSamples < fftSize)
+    if (writePtr + numSamples < windowSize)
     {
         buffers[writeBuffer].copyFrom (0, writePtr, buffer, numSamples);
         writePtr += numSamples;
     }
     else
     {
-        auto samplesBeforeEnd = fftSize - writePtr;
+        auto samplesBeforeEnd = windowSize - writePtr;
         buffers[writeBuffer].copyFrom (0, writePtr, buffer, samplesBeforeEnd);
 
         doFFTProcessing (buffers[writeBuffer].getWritePointer (0), buffers[writeBuffer].getNumSamples());
 
         writeBuffer = ! writeBuffer;
 
-        buffers[writeBuffer].copyFrom (0, 0, AudioBuffer<float> (&buffer, 1, numSamples), 0, samplesBeforeEnd, numSamples-samplesBeforeEnd);
+        buffers[writeBuffer].copyFrom (0, 0, &buffer[samplesBeforeEnd], numSamples-samplesBeforeEnd);
         writePtr = numSamples-samplesBeforeEnd;
     }
 
     // read from buffers
-    if (readPtr + numSamples < fftSize)
+    if (readPtr + numSamples < windowSize)
     {
         auto* bufferPtr = buffers[readBuffer].getReadPointer (0);
+        auto* overlapBufferPtr = buffers[! readBuffer].getWritePointer(0);
         for (int n = 0; n < numSamples; n++)
+        {
             buffer[n] = bufferPtr[readPtr+n];
+            buffer[n] += overlapBufferPtr[readPtr + windowSize + n];
+            overlapBufferPtr[readPtr + windowSize + n] = 0.0f;
+        }
 
         readPtr = readPtr + numSamples;
     }
     else
     {
-        auto samplesBeforeEnd = fftSize - readPtr;
+        auto samplesBeforeEnd = windowSize - readPtr;
 
         auto* bufferPtr = buffers[readBuffer].getReadPointer (0);
+        auto* overlapBufferPtr = buffers[! readBuffer].getWritePointer(0);
         for (int n = 0; n < samplesBeforeEnd; n++)
+        {
             buffer[n] = bufferPtr[readPtr+n];
+            buffer[n] += overlapBufferPtr[readPtr + windowSize + n];
+            overlapBufferPtr[readPtr + windowSize + n] = 0.0f;
+        }
 
         readBuffer = ! readBuffer;
 
         bufferPtr = buffers[readBuffer].getReadPointer (0);
+        overlapBufferPtr = buffers[! readBuffer].getWritePointer(0);
         for (int n = samplesBeforeEnd; n < numSamples; n++)
+        {
             buffer[n] = bufferPtr[n-samplesBeforeEnd];
+            buffer[n] += overlapBufferPtr[windowSize + n - samplesBeforeEnd];
+            overlapBufferPtr[windowSize + n - samplesBeforeEnd] =  0.0f;
+        }
 
         readPtr = numSamples-samplesBeforeEnd;
     }
@@ -87,9 +102,6 @@ void Filterbank::process (float* buffer, int numSamples)
 
 void Filterbank::doFFTProcessing (float* buffer, int numSamples)
 {
-    for (int n = numSamples; n < fftSize; n++)
-        fftInput[n] = fftInput[n-numSamples];
-
     for (int n = 0; n < numSamples; n++)
         fftInput[n] = buffer[n];
 
