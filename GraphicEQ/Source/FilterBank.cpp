@@ -2,7 +2,7 @@
 
 Filterbank::Filterbank()
 {
-    for (int k = 0; k < order-1; k++)
+    for (int k = 0; k < order44_1-1; k++)
         gainMultipliers[k] = 1.0f;
 }
 
@@ -11,15 +11,32 @@ void Filterbank::setGain (float gainDB, int band)
     gainMultipliers[band] = Decibels::decibelsToGain (gainDB);
 }
 
-void Filterbank::reset()
+void Filterbank::reset (double sampleRate, int maxExpectedBlockSize)
 {
-    for (int n = 0; n < fftSize; n++)
-        fftInput[n] = 0.0f;
+    if (sampleRate <= 48000)
+    {
+        fftSize = fftSize44_1;
+        order = order44_1;
+    }
+    else if (sampleRate <= 96000)
+    {
+        fftSize = 2*fftSize44_1;
+        order = order44_1+1;
+    }
+    else if (sampleRate <= 192000)
+    {
+        fftSize = 4*fftSize44_1;
+        order44_1+2;
+    }
+
+    windowSize = fftSize / 2; //jmin (maxExpectedBlockSize, fftSize / 2);
+
+    fft.reset (new dsp::FFT (order));
 
     posCells.clear();
     negCells.clear();
 
-    for (int i = 0; i < order-1; i++)
+    for (int i = 0; i < order44_1-1; i++)
     {
         Array<Complex<float>> newPosCell;
         newPosCell.resize ((int) pow (2, i));
@@ -105,7 +122,7 @@ void Filterbank::doFFTProcessing (float* buffer, int numSamples)
     for (int n = 0; n < numSamples; n++)
         fftInput[n] = buffer[n];
 
-    fft.perform (fftInput, fftOutput, false);
+    fft->perform (fftInput, fftOutput, false);
 
     for (int k = 0; k < fftSize/2; k++)
     {
@@ -131,7 +148,7 @@ void Filterbank::doFFTProcessing (float* buffer, int numSamples)
         iFftInput[fftSize-k-1] = negativeFreq[k];
     }
 
-    fft.perform (iFftInput, iFftOutput, true);
+    fft->perform (iFftInput, iFftOutput, true);
 
     for (int n = 0; n < numSamples; n++)
         buffer[n] = iFftOutput[n].real();

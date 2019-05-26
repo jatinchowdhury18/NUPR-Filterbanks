@@ -21,8 +21,6 @@ GraphicEqAudioProcessor::GraphicEqAudioProcessor()
 
         filterbanks[0].setGain (*gainDB[i], i+1);
     }
-
-    setLatencySamples (2048);
 }
 
 GraphicEqAudioProcessor::~GraphicEqAudioProcessor()
@@ -106,8 +104,10 @@ void GraphicEqAudioProcessor::changeProgramName (int index, const String& newNam
 //==============================================================================
 void GraphicEqAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    filterbanks[0].reset();
-    filterbanks[1].reset();
+    filterbanks[0].reset (sampleRate, samplesPerBlock);
+    filterbanks[1].reset (sampleRate, samplesPerBlock);
+
+    setLatencySamples (2048);
 }
 
 void GraphicEqAudioProcessor::releaseResources()
