@@ -2,7 +2,7 @@
 #include "PluginEditor.h"
 
 //==============================================================================
-GraphicEqAudioProcessor::GraphicEqAudioProcessor()
+Noise_suppressionAudioProcessor::Noise_suppressionAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
      : AudioProcessor (BusesProperties()
                      #if ! JucePlugin_IsMidiEffect
@@ -14,38 +14,43 @@ GraphicEqAudioProcessor::GraphicEqAudioProcessor()
                        )
 #endif
 {
-    for (int i = 0; i < numBands; i++)
-    {
-        addParameter (gainDB[i] = new AudioParameterFloat ("gainDB" + String(i), names[i], -60.0f, 6.0f, 0.0f));
-        gainDB[i]->addListener (this);
+    addParameter (threshDB = new AudioParameterFloat ("threshDB", "Thresh", -80.0f, 0.0f, 0.0f));
+    addParameter (speedMs = new AudioParameterFloat ("speedMs", "Speed", 1.0f, 1000.0f, 100.0f));
 
-        filterbanks[0].setGain (*gainDB[i], i+1);
+    threshDB->addListener (this);
+    speedMs->addListener (this);
+
+    filterbanks[0].setThresh (*threshDB);
+    filterbanks[1].setThresh (*threshDB);
+    filterbanks[0].setSpeed (*speedMs);
+    filterbanks[1].setSpeed (*speedMs);
+}
+
+Noise_suppressionAudioProcessor::~Noise_suppressionAudioProcessor()
+{
+}
+
+void Noise_suppressionAudioProcessor::parameterValueChanged (int paramIndex, float /*newValue*/)
+{
+    if (paramIndex == threshDB->getParameterIndex())
+    {
+        filterbanks[0].setThresh (*threshDB);
+        filterbanks[1].setThresh (*threshDB);
     }
-}
-
-GraphicEqAudioProcessor::~GraphicEqAudioProcessor()
-{
-}
-
-void GraphicEqAudioProcessor::parameterValueChanged (int paramIndex, float /*newValue*/)
-{
-    for (int i = 0; i < numBands; i++)
+    else if (paramIndex == speedMs->getParameterIndex())
     {
-        if (paramIndex == gainDB[i]->getParameterIndex())
-        {
-            filterbanks[0].setGain (*gainDB[i], i+1);
-            filterbanks[1].setGain (*gainDB[i], i+1);
-        }
+        filterbanks[0].setSpeed (*speedMs);
+        filterbanks[1].setSpeed (*speedMs);
     }
 }
 
 //==============================================================================
-const String GraphicEqAudioProcessor::getName() const
+const String Noise_suppressionAudioProcessor::getName() const
 {
     return JucePlugin_Name;
 }
 
-bool GraphicEqAudioProcessor::acceptsMidi() const
+bool Noise_suppressionAudioProcessor::acceptsMidi() const
 {
    #if JucePlugin_WantsMidiInput
     return true;
@@ -54,7 +59,7 @@ bool GraphicEqAudioProcessor::acceptsMidi() const
    #endif
 }
 
-bool GraphicEqAudioProcessor::producesMidi() const
+bool Noise_suppressionAudioProcessor::producesMidi() const
 {
    #if JucePlugin_ProducesMidiOutput
     return true;
@@ -63,7 +68,7 @@ bool GraphicEqAudioProcessor::producesMidi() const
    #endif
 }
 
-bool GraphicEqAudioProcessor::isMidiEffect() const
+bool Noise_suppressionAudioProcessor::isMidiEffect() const
 {
    #if JucePlugin_IsMidiEffect
     return true;
@@ -72,37 +77,37 @@ bool GraphicEqAudioProcessor::isMidiEffect() const
    #endif
 }
 
-double GraphicEqAudioProcessor::getTailLengthSeconds() const
+double Noise_suppressionAudioProcessor::getTailLengthSeconds() const
 {
     return 0.0;
 }
 
-int GraphicEqAudioProcessor::getNumPrograms()
+int Noise_suppressionAudioProcessor::getNumPrograms()
 {
     return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
                 // so this should be at least 1, even if you're not really implementing programs.
 }
 
-int GraphicEqAudioProcessor::getCurrentProgram()
+int Noise_suppressionAudioProcessor::getCurrentProgram()
 {
     return 0;
 }
 
-void GraphicEqAudioProcessor::setCurrentProgram (int index)
+void Noise_suppressionAudioProcessor::setCurrentProgram (int index)
 {
 }
 
-const String GraphicEqAudioProcessor::getProgramName (int index)
+const String Noise_suppressionAudioProcessor::getProgramName (int index)
 {
     return {};
 }
 
-void GraphicEqAudioProcessor::changeProgramName (int index, const String& newName)
+void Noise_suppressionAudioProcessor::changeProgramName (int index, const String& newName)
 {
 }
 
 //==============================================================================
-void GraphicEqAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+void Noise_suppressionAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     filterbanks[0].reset (sampleRate, samplesPerBlock);
     filterbanks[1].reset (sampleRate, samplesPerBlock);
@@ -110,14 +115,12 @@ void GraphicEqAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     setLatencySamples (2048);
 }
 
-void GraphicEqAudioProcessor::releaseResources()
+void Noise_suppressionAudioProcessor::releaseResources()
 {
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
-bool GraphicEqAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+bool Noise_suppressionAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
   #if JucePlugin_IsMidiEffect
     ignoreUnused (layouts);
@@ -140,7 +143,7 @@ bool GraphicEqAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts
 }
 #endif
 
-void GraphicEqAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& midiMessages)
+void Noise_suppressionAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& midiMessages)
 {
     ScopedNoDenormals noDenormals;
     auto totalNumInputChannels  = getTotalNumInputChannels();
@@ -152,28 +155,37 @@ void GraphicEqAudioProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuff
 
         filterbanks[channel].process (channelData, buffer.getNumSamples());
     }
+
+    auto editor = getActiveEditor();
+    if (editor != nullptr)
+        MessageManager::callAsync ([editor] { editor->repaint(); });
+}
+
+float Noise_suppressionAudioProcessor::getCellPower (int cellIndex) const
+{
+    return (filterbanks[0].getCellPower (cellIndex) + filterbanks[1].getCellPower (cellIndex) / 2);
 }
 
 //==============================================================================
-bool GraphicEqAudioProcessor::hasEditor() const
+bool Noise_suppressionAudioProcessor::hasEditor() const
 {
     return true; // (change this to false if you choose to not supply an editor)
 }
 
-AudioProcessorEditor* GraphicEqAudioProcessor::createEditor()
+AudioProcessorEditor* Noise_suppressionAudioProcessor::createEditor()
 {
-    return new GraphicEqAudioProcessorEditor (*this);
+    return new Noise_suppressionAudioProcessorEditor (*this);
 }
 
 //==============================================================================
-void GraphicEqAudioProcessor::getStateInformation (MemoryBlock& destData)
+void Noise_suppressionAudioProcessor::getStateInformation (MemoryBlock& destData)
 {
     // You should use this method to store your parameters in the memory block.
     // You could do that either as raw data, or use the XML or ValueTree classes
     // as intermediaries to make it easy to save and load complex data.
 }
 
-void GraphicEqAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+void Noise_suppressionAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     // You should use this method to restore your parameters from this memory block,
     // whose contents will have been created by the getStateInformation() call.
@@ -183,5 +195,5 @@ void GraphicEqAudioProcessor::setStateInformation (const void* data, int sizeInB
 // This creates new instances of the plugin..
 AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
-    return new GraphicEqAudioProcessor();
+    return new Noise_suppressionAudioProcessor();
 }
